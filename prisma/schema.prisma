@@ -1,0 +1,175 @@
+// ============================================
+// WhopLevel Database Schema
+// ============================================
+// This defines all the tables for tracking:
+// - Member XP & levels
+// - Activity log (every XP-earning action)
+// - Streaks (consecutive daily logins)
+// - Badges (achievements members can unlock)
+// - Rewards (things members can claim with XP)
+// - App settings (admin configures per community)
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// MEMBER - One row per user per community
+// ============================================
+model Member {
+  id            String   @id @default(cuid())
+  
+  // Whop identifiers
+  userId        String   // Whop user ID (e.g., "user_xxxxx")
+  experienceId  String   // Whop experience/community ID
+  companyId     String   // Whop company ID
+  
+  // Gamification data
+  displayName   String   @default("Member")
+  avatarUrl     String?
+  totalXp       Int      @default(0)
+  currentStreak Int      @default(0)
+  longestStreak Int      @default(0)
+  lastActiveAt  DateTime @default(now())
+  
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  activities    Activity[]
+  memberBadges  MemberBadge[]
+  claimedRewards ClaimedReward[]
+  
+  // Unique constraint: one member per user per experience
+  @@unique([userId, experienceId])
+  @@index([experienceId, totalXp(sort: Desc)]) // For leaderboard queries
+  @@index([companyId])
+}
+
+// ============================================
+// ACTIVITY - Every XP-earning action logged
+// ============================================
+model Activity {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  
+  action      String   // e.g., "post", "lesson", "login", "referral", "quiz", "feedback"
+  description String   // Human-readable description
+  xpEarned    Int
+  icon        String   @default("⚡")
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([memberId, createdAt(sort: Desc)])
+}
+
+// ============================================
+// BADGE - Available badges for a community
+// ============================================
+model Badge {
+  id            String   @id @default(cuid())
+  experienceId  String   // Which community this badge belongs to
+  
+  name          String
+  icon          String
+  description   String
+  
+  // Unlock criteria
+  criteriaType  String   // "xp", "streak", "activity_count", "referral_count", "manual"
+  criteriaValue Int      @default(0) // e.g., 1000 for "reach 1000 XP"
+  
+  createdAt     DateTime @default(now())
+  
+  // Relations
+  memberBadges  MemberBadge[]
+  
+  @@index([experienceId])
+}
+
+// ============================================
+// MEMBER_BADGE - Junction: which members earned which badges
+// ============================================
+model MemberBadge {
+  id        String   @id @default(cuid())
+  memberId  String
+  badgeId   String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  
+  earnedAt  DateTime @default(now())
+  
+  @@unique([memberId, badgeId])
+}
+
+// ============================================
+// REWARD - Claimable rewards set by admin
+// ============================================
+model Reward {
+  id            String   @id @default(cuid())
+  experienceId  String
+  
+  name          String
+  icon          String
+  description   String?
+  xpCost        Int      // How much XP to claim
+  totalSupply   Int      @default(-1) // -1 = unlimited
+  claimed       Int      @default(0)  // How many claimed so far
+  isActive      Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  
+  claimedRewards ClaimedReward[]
+  
+  @@index([experienceId])
+}
+
+// ============================================
+// CLAIMED_REWARD - Which members claimed which rewards
+// ============================================
+model ClaimedReward {
+  id        String   @id @default(cuid())
+  memberId  String
+  rewardId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  reward    Reward   @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  
+  claimedAt DateTime @default(now())
+  
+  @@unique([memberId, rewardId])
+}
+
+// ============================================
+// APP_SETTINGS - Admin configuration per community
+// ============================================
+model AppSettings {
+  id            String @id @default(cuid())
+  experienceId  String @unique
+  companyId     String
+  
+  // Point values for each action type
+  xpPerPost     Int @default(10)
+  xpPerLesson   Int @default(50)
+  xpPerLogin    Int @default(25)
+  xpPerReferral Int @default(100)
+  xpPerQuiz     Int @default(30)
+  xpPerFeedback Int @default(15)
+  
+  // Feature toggles
+  leaderboardEnabled Boolean @default(true)
+  badgesEnabled      Boolean @default(true)
+  rewardsEnabled     Boolean @default(true)
+  streaksEnabled     Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([companyId])
+}
