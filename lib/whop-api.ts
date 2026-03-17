@@ -6,36 +6,63 @@
 // users when the app loads inside a Whop iframe.
 // ============================================
 
-import { WhopApi, makeUserTokenVerifier } from "@whop/api";
+import { makeWhopServerSdk, makeUserTokenVerifier } from "@whop/api";
 
-// Initialize the Whop API client
-// This is used to make API calls to Whop (get user info, etc.)
-export const whopApi = WhopApi({
-  appApiKey: process.env.WHOP_API_KEY ?? "",
-  onBehalfOfUserId: process.env.WHOP_AGENT_USER_ID,
-});
+// ============================================
+// Safe SDK initialization
+// Guards against missing env vars at module
+// load time, which would crash the server.
+// ============================================
 
-// Create a token verifier
-// When your app loads inside the Whop iframe, Whop sends a
-// token in the request headers. This verifies that token is real.
-export const verifyUserToken = makeUserTokenVerifier({
-  appId: process.env.WHOP_APP_ID ?? "",
-  dontThrow: true, // Returns null instead of throwing on invalid tokens
+let _whopApi: ReturnType<typeof makeWhopServerSdk> | null = null;
+let _verifyUserToken: ReturnType<typeof makeUserTokenVerifier> | null = null;
+
+function getWhopApi() {
+  if (!_whopApi) {
+    _whopApi = makeWhopServerSdk({
+      TOKEN: process.env.WHOP_API_KEY ?? "",
+      onBehalfOfUserId: process.env.WHOP_AGENT_USER_ID,
+    });
+  }
+  return _whopApi;
+}
+
+function getVerifier() {
+  if (!_verifyUserToken) {
+    _verifyUserToken = makeUserTokenVerifier({
+      appId: process.env.WHOP_APP_ID ?? "",
+      dontThrow: true,
+    });
+  }
+  return _verifyUserToken;
+}
+
+// Keep named export for backwards compatibility
+export const whopApi = new Proxy({} as ReturnType<typeof makeWhopServerSdk>, {
+  get(_target, prop) {
+    const api = getWhopApi();
+    return (api as Record<string | symbol, unknown>)[prop];
+  },
 });
 
 // ============================================
 // Helper: Get the current user from a request
 // ============================================
 export async function getCurrentUser(headersList: Headers) {
-  const tokenData = await verifyUserToken(headersList);
-  if (!tokenData) return null;
+  try {
+    const verifier = getVerifier();
+    const tokenData = await verifier(headersList);
+    if (!tokenData) return null;
 
-  return {
-    userId: tokenData.userId,
-    experienceId: tokenData.experienceId ?? null,
-    companyId: tokenData.companyId ?? null,
-    isAdmin: tokenData.isAdmin ?? false,
-  };
+    return {
+      userId: tokenData.userId,
+      experienceId: tokenData.experienceId ?? null,
+      companyId: tokenData.companyId ?? null,
+      isAdmin: tokenData.isAdmin ?? false,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ============================================
@@ -43,7 +70,8 @@ export async function getCurrentUser(headersList: Headers) {
 // ============================================
 export async function getWhopUserProfile(userId: string) {
   try {
-    const user = await whopApi.PublicUser({ userId });
+    const api = getWhopApi();
+    const user = await api.PublicUser({ userId });
     return {
       id: userId,
       name: user.publicUser?.name ?? "Member",
