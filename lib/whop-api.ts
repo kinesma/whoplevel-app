@@ -21,6 +21,7 @@ function getWhopServerSdk() {
   if (!_whopApi) {
     _whopApi = WhopServerSdk({
       appApiKey: process.env.WHOP_API_KEY ?? "",
+      appId: process.env.WHOP_APP_ID ?? "",
       onBehalfOfUserId: process.env.WHOP_AGENT_USER_ID,
     });
   }
