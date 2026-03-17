@@ -6,7 +6,7 @@
 // users when the app loads inside a Whop iframe.
 // ============================================
 
-import { makeWhopServerSdk, makeUserTokenVerifier } from "@whop/api";
+import { WhopApi, makeUserTokenVerifier } from "@whop/api";
 
 // ============================================
 // Safe SDK initialization
@@ -14,13 +14,13 @@ import { makeWhopServerSdk, makeUserTokenVerifier } from "@whop/api";
 // load time, which would crash the server.
 // ============================================
 
-let _whopApi: ReturnType<typeof makeWhopServerSdk> | null = null;
+let _whopApi: ReturnType<typeof WhopApi> | null = null;
 let _verifyUserToken: ReturnType<typeof makeUserTokenVerifier> | null = null;
 
 function getWhopApi() {
   if (!_whopApi) {
-    _whopApi = makeWhopServerSdk({
-      TOKEN: process.env.WHOP_API_KEY ?? "",
+    _whopApi = WhopApi({
+      appApiKey: process.env.WHOP_API_KEY ?? "",
       onBehalfOfUserId: process.env.WHOP_AGENT_USER_ID,
     });
   }
@@ -38,7 +38,7 @@ function getVerifier() {
 }
 
 // Keep named export for backwards compatibility
-export const whopApi = new Proxy({} as ReturnType<typeof makeWhopServerSdk>, {
+export const whopApi = new Proxy({} as ReturnType<typeof WhopApi>, {
   get(_target, prop) {
     const api = getWhopApi();
     return (api as Record<string | symbol, unknown>)[prop];
@@ -51,7 +51,9 @@ export const whopApi = new Proxy({} as ReturnType<typeof makeWhopServerSdk>, {
 export async function getCurrentUser(headersList: Headers) {
   try {
     const verifier = getVerifier();
-    const tokenData = await verifier(headersList);
+    // Cast to any: @whop/api token payload has runtime fields not in SDK types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tokenData = await verifier(headersList) as any;
     if (!tokenData) return null;
 
     return {
@@ -70,12 +72,14 @@ export async function getCurrentUser(headersList: Headers) {
 // ============================================
 export async function getWhopUserProfile(userId: string) {
   try {
-    const api = getWhopApi();
+    // Cast to any: @whop/api SDK types are incomplete for some methods
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const api = getWhopApi() as any;
     const user = await api.PublicUser({ userId });
     return {
       id: userId,
-      name: user.publicUser?.name ?? "Member",
-      avatarUrl: user.publicUser?.profilePicUrl ?? null,
+      name: user?.publicUser?.name ?? "Member",
+      avatarUrl: user?.publicUser?.profilePicUrl ?? null,
     };
   } catch {
     return { id: userId, name: "Member", avatarUrl: null };
