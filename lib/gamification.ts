@@ -24,7 +24,7 @@ export const RANKS = [
 ] as const;
 
 export function getRank(xp: number) {
-  let current = RANKS[0];
+  let current: (typeof RANKS)[number] = RANKS[0];
   for (const rank of RANKS) {
     if (xp >= rank.minXP) current = rank;
   }
