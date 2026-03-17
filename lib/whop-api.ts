@@ -6,7 +6,7 @@
 // users when the app loads inside a Whop iframe.
 // ============================================
 
-import { WhopApi, makeUserTokenVerifier } from "@whop/api";
+import { WhopServerSdk, makeUserTokenVerifier } from "@whop/api";
 
 // ============================================
 // Safe SDK initialization
@@ -14,12 +14,12 @@ import { WhopApi, makeUserTokenVerifier } from "@whop/api";
 // load time, which would crash the server.
 // ============================================
 
-let _whopApi: ReturnType<typeof WhopApi> | null = null;
+let _whopApi: ReturnType<typeof WhopServerSdk> | null = null;
 let _verifyUserToken: ReturnType<typeof makeUserTokenVerifier> | null = null;
 
-function getWhopApi() {
+function getWhopServerSdk() {
   if (!_whopApi) {
-    _whopApi = WhopApi({
+    _whopApi = WhopServerSdk({
       appApiKey: process.env.WHOP_API_KEY ?? "",
       onBehalfOfUserId: process.env.WHOP_AGENT_USER_ID,
     });
@@ -38,9 +38,9 @@ function getVerifier() {
 }
 
 // Keep named export for backwards compatibility
-export const whopApi = new Proxy({} as ReturnType<typeof WhopApi>, {
+export const whopApi = new Proxy({} as ReturnType<typeof WhopServerSdk>, {
   get(_target, prop) {
-    const api = getWhopApi();
+    const api = getWhopServerSdk();
     return (api as Record<string | symbol, unknown>)[prop];
   },
 });
@@ -74,7 +74,7 @@ export async function getWhopUserProfile(userId: string) {
   try {
     // Cast to any: @whop/api SDK types are incomplete for some methods
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = getWhopApi() as any;
+    const api = getWhopServerSdk() as any;
     const user = await api.PublicUser({ userId });
     return {
       id: userId,
