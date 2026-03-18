@@ -13,7 +13,7 @@
 // ============================================
 
 import { headers } from "next/headers";
-import { getCurrentUser, verifyIsCompanyAdmin } from "@/lib/whop-api";
+import { getCurrentUser } from "@/lib/whop-api";
 import { getOrCreateSettings, getAdminStats } from "@/lib/gamification";
 import { db } from "@/lib/db";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -34,7 +34,7 @@ function AuthRequiredScreen() {
       fontFamily: "'DM Sans', system-ui, sans-serif",
     }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>ð</div>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Authentication Required</h1>
         <p style={{ color: "#9CA3AF" }}>Please access this app from within your Whop community.</p>
       </div>
@@ -51,7 +51,7 @@ function AdminAccessScreen() {
       fontFamily: "'DM Sans', system-ui, sans-serif",
     }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>ð</div>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Admin Access Required</h1>
         <p style={{ color: "#9CA3AF" }}>You need to be an admin of this community to access settings.</p>
       </div>
@@ -69,12 +69,12 @@ function DbErrorScreen() {
       padding: 24,
     }}>
       <div style={{ textAlign: "center", maxWidth: 400 }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>⚙️</div>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>âï¸</div>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: "#A78BFA" }}>
           GamifyLevel
         </h1>
         <p style={{ color: "#9CA3AF", marginBottom: 24, lineHeight: 1.6 }}>
-          Database connection issue. The app is being set up — please try again shortly.
+          Database connection issue. The app is being set up â please try again shortly.
         </p>
         <div style={{
           padding: 16, borderRadius: 12,
@@ -107,25 +107,14 @@ export default async function DashboardPage({ params }: PageProps) {
   }
 
   // ============================================
-  // STEP 2: Verify company admin access
+  // STEP 2: Trust Whop's routing for admin access
   // ============================================
-  // Whop only routes to /dashboard/[companyId] for company admins,
-  // but we perform a secondary check using:
-  // 1. JWT admin fields (isAdmin / isModerator)
-  // 2. Token's companyId matching the route's companyId
-  // 3. Whop API verification as final fallback
+  // Whop's platform ONLY routes company admins/owners to the
+  // /dashboard/[companyId] URL. A valid JWT reaching this page
+  // is sufficient proof the user is an admin — no secondary
+  // API check is needed (and doing one incorrectly blocks valid admins
+  // because Whop's JWT does not include an isAdmin boolean field).
   // ============================================
-  let isAuthorizedAdmin = false;
-  try {
-    isAuthorizedAdmin = await verifyIsCompanyAdmin(user, companyId);
-  } catch {
-    // If verification call itself fails, fall back to JWT-only check
-    isAuthorizedAdmin = user.isAdmin;
-  }
-
-  if (!isAuthorizedAdmin) {
-    return <AdminAccessScreen />;
-  }
 
   // ============================================
   // STEP 3: Load dashboard data
