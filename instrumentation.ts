@@ -10,7 +10,14 @@
 // Safe to run on every cold start — Prisma
 // db push is idempotent (no-op if schema
 // already matches).
+//
+// FIX: Uses the full path to the prisma binary
+// (node_modules/.bin/prisma) instead of `npx`
+// so it works reliably in serverless environments
+// like Vercel where npx may not be in PATH.
 // ============================================
+
+import path from "path";
 
 export async function register() {
   // Only run in the Node.js runtime, not on the edge
@@ -23,12 +30,22 @@ export async function register() {
     }
 
     try {
-      // Dynamically import to avoid bundling issues
       const { execSync } = await import("child_process");
+
+      // Use the full path to the prisma binary so this works in serverless
+      // environments (Vercel, Railway, etc.) where `npx` may not be in PATH
+      const prismaBin = path.join(
+        process.cwd(),
+        "node_modules",
+        ".bin",
+        "prisma"
+      );
+
       console.log("[GamifyLevel] Syncing database schema...");
-      execSync("npx prisma db push --skip-generate --accept-data-loss", {
+      execSync(`"${prismaBin}" db push --skip-generate --accept-data-loss`, {
         stdio: "pipe",
-        timeout: 30000,
+        timeout: 60000, // Increased to 60s for cold-start DB connections
+        env: { ...process.env },
       });
       console.log("[GamifyLevel] Database schema sync complete.");
     } catch (err) {
