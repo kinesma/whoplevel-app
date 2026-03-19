@@ -163,8 +163,9 @@ function DashboardTab({ member, activities }: { member: MemberData; activities: 
 function LeaderboardTab({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
   const [period, setPeriod] = useState<"weekly" | "monthly" | "all-time">("all-time");
 
-  const top3 = leaderboard.slice(0, 3);
-  const rest = leaderboard.slice(3);
+  const showPodium = leaderboard.length >= 3;
+  const top3 = showPodium ? leaderboard.slice(0, 3) : [];
+  const listMembers = showPodium ? leaderboard.slice(3) : leaderboard;
   const medals = ["🥇", "🥈", "🥉"];
   const podiumOrder = top3.length >= 3 ? [top3[1], top3[0], top3[2]] : top3;
   const heights = [120, 150, 100];
@@ -186,7 +187,7 @@ function LeaderboardTab({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
         </div>
       </div>
 
-      {top3.length >= 3 && (
+      {showPodium && (
         <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 12, marginBottom: 28 }}>
           {podiumOrder.map((user, i) => (
             <div key={user.id} style={{ textAlign: "center", flex: 1 }}>
@@ -207,7 +208,7 @@ function LeaderboardTab({ leaderboard }: { leaderboard: LeaderboardEntry[] }) {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {rest.map((user) => (
+        {listMembers.map((user) => (
           <div key={user.id} style={{
             display: "flex", alignItems: "center", padding: "12px 16px", borderRadius: 14,
             background: user.isCurrentUser ? "rgba(139,92,246,0.08)" : "rgba(255,255,255,0.02)",
