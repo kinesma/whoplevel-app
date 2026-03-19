@@ -91,59 +91,47 @@ export default async function ExperiencePage({ params }: PageProps) {
     const userExperienceId = user.experienceId ?? experienceId;
     const companyId = user.companyId ?? "";
 
-    // Get user profile from Whop (falls back to defaults on failure)
-    const profile = await getWhopUserProfile(user.userId);
+    // ROUND 1 (parallel): Whop profile + member upsert at the same time.
+    // This hides the Neon cold-start latency behind the Whop API call.
+    const [profile, member] = await Promise.all([
+      getWhopUserProfile(user.userId),
+      getOrCreateMember(user.userId, userExperienceId, companyId),
+    ]);
 
-    // Get or create member record
-    const member = await getOrCreateMember(
-      user.userId,
-      userExperienceId,
-      companyId,
-      profile.name,
-      profile.avatarUrl ?? undefined
-    );
+    // ROUND 2 (parallel): streak update + badge seed + all 4 data reads.
+    // Running these 6 ops concurrently keeps total latency well within
+    // Vercel's 10-second function timeout even on Neon cold starts.
+    const [streakMember, , activities, leaderboardMembers, badges, rewards] =
+      await Promise.all([
+        updateStreak(member.id),
+        seedDefaultBadges(userExperienceId),
+        db.activity.findMany({
+          where: { memberId: member.id },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        }),
+        db.member.findMany({
+          where: { experienceId: userExperienceId },
+          orderBy: { totalXp: "desc" },
+          take: 20,
+        }),
+        db.badge.findMany({
+          where: { experienceId: userExperienceId },
+          include: {
+            memberBadges: { where: { memberId: member.id } },
+          },
+        }),
+        db.reward.findMany({
+          where: { experienceId: userExperienceId, isActive: true },
+          include: {
+            claimedRewards: { where: { memberId: member.id } },
+          },
+        }),
+      ]);
 
-    // Update streak
-    await updateStreak(member.id);
-
-    // Seed default badges if new community
-    await seedDefaultBadges(userExperienceId);
-
-    // Reload member after streak update
-    const updatedMember = await db.member.findUnique({
-      where: { id: member.id },
-    });
+    // Use the post-streak member (or the original if no streak change today)
+    const updatedMember = streakMember ?? member;
     if (!updatedMember) throw new Error("Member not found after upsert");
-
-    // Get recent activities
-    const activities = await db.activity.findMany({
-      where: { memberId: member.id },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
-
-    // Get leaderboard
-    const leaderboardMembers = await db.member.findMany({
-      where: { experienceId: userExperienceId },
-      orderBy: { totalXp: "desc" },
-      take: 20,
-    });
-
-    // Get badges
-    const badges = await db.badge.findMany({
-      where: { experienceId: userExperienceId },
-      include: {
-        memberBadges: { where: { memberId: member.id } },
-      },
-    });
-
-    // Get rewards
-    const rewards = await db.reward.findMany({
-      where: { experienceId: userExperienceId, isActive: true },
-      include: {
-        claimedRewards: { where: { memberId: member.id } },
-      },
-    });
 
     // ============================================
     // PREPARE DATA FOR CLIENT
@@ -155,8 +143,9 @@ export default async function ExperiencePage({ params }: PageProps) {
     const memberData = {
       id: updatedMember.id,
       userId: updatedMember.userId,
-      displayName: updatedMember.displayName,
-      avatarUrl: updatedMember.avatarUrl,
+      // Use real Whop profile name/avatar when available; fall back to DB value
+      displayName: (profile.name && profile.name !== "Member") ? profile.name : updatedMember.displayName,
+      avatarUrl: profile.avatarUrl ?? updatedMember.avatarUrl,
       totalXp: updatedMember.totalXp,
       currentStreak: updatedMember.currentStreak,
       longestStreak: updatedMember.longestStreak,
