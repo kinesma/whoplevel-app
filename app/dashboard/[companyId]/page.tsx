@@ -122,7 +122,11 @@ export default async function DashboardPage({ params }: PageProps) {
   // helpful message rather than a crash page.
   // ============================================
   try {
-    const experienceId = user.experienceId ?? "";
+    // Key everything by the experience when the JWT carries one,
+    // otherwise fall back to companyId — MUST match the admin API's
+    // fallback (see app/api/admin/route.ts), otherwise settings the
+    // admin saves are stored under a different key than members read.
+    const experienceId = user.experienceId ?? companyId;
     const settings = await getOrCreateSettings(experienceId, companyId);
     const stats = await getAdminStats(experienceId);
 
