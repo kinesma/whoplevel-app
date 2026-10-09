@@ -59,19 +59,26 @@ export async function POST(request: NextRequest) {
   try {
     const headersList = await headers();
     const user = await getCurrentUser(headersList);
-    if (!user || !user.experienceId || !user.isAdmin) {
+    // Admin check via companyId match (Whop's JWT does not carry a
+    // reliable isAdmin field — see lib/whop-api.ts). The badge is
+    // created for the caller's own company context only.
+    const body = await request.json();
+    const { companyId = "", name, icon, description, criteriaType, criteriaValue } = body;
+    if (!user || !user.companyId || user.companyId !== companyId) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
+    const experienceId = user.experienceId ?? companyId;
 
-    const body = await request.json();
-    const { name, icon, description, criteriaType, criteriaValue } = body;
+    if (!name || !icon || !criteriaType) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
 
     const badge = await db.badge.create({
       data: {
-        experienceId: user.experienceId,
+        experienceId,
         name,
         icon,
-        description,
+        description: description ?? "",
         criteriaType,
         criteriaValue: criteriaValue ?? 0,
       },

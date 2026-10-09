@@ -1,13 +1,17 @@
 // ============================================
 // API: /api/xp
 // ============================================
-// POST - Add XP to a member
 // GET  - Get member's XP data & activity
+//
+// NOTE: there is intentionally NO POST handler. XP is only awarded
+// server-side via verified Whop webhooks (see /api/webhook).
+// A previous POST endpoint let any authenticated member mint
+// arbitrary XP with no proof of action, so it was removed.
 // ============================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/whop-api";
-import { addXP, getOrCreateMember, updateStreak, getOrCreateSettings, seedDefaultBadges } from "@/lib/gamification";
+import { getOrCreateMember, updateStreak, seedDefaultBadges } from "@/lib/gamification";
 import { db } from "@/lib/db";
 import { headers } from "next/headers";
 
@@ -62,67 +66,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("GET /api/xp error:", error);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
-  }
-}
-
-// POST /api/xp
-// Body: { action, description, icon? }
-// Adds XP based on the action type and community settings
-export async function POST(request: NextRequest) {
-  try {
-    const headersList = await headers();
-    const user = await getCurrentUser(headersList);
-    if (!user || !user.experienceId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { action, description, icon } = body;
-
-    if (!action || !description) {
-      return NextResponse.json({ error: "Missing action or description" }, { status: 400 });
-    }
-
-    // Get community settings for XP values
-    const settings = await getOrCreateSettings(user.experienceId, user.companyId ?? "");
-
-    // Map action type to XP value from settings
-    const xpMap: Record<string, number> = {
-      post: settings.xpPerPost,
-      lesson: settings.xpPerLesson,
-      login: settings.xpPerLogin,
-      referral: settings.xpPerReferral,
-      quiz: settings.xpPerQuiz,
-      feedback: settings.xpPerFeedback,
-    };
-
-    const xpAmount = xpMap[action] ?? 10; // Default to 10 if unknown action
-
-    // Get or create the member
-    const member = await getOrCreateMember(
-      user.userId,
-      user.experienceId,
-      user.companyId ?? ""
-    );
-
-    // Add XP
-    const result = await addXP(
-      member.id,
-      action,
-      description,
-      xpAmount,
-      icon ?? "⚡"
-    );
-
-    return NextResponse.json({
-      success: true,
-      xpEarned: xpAmount,
-      totalXp: result.member.totalXp,
-      activityId: result.activity.id,
-    });
-  } catch (error) {
-    console.error("POST /api/xp error:", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

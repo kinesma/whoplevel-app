@@ -57,12 +57,16 @@ export async function getOrCreateMember(
   displayName?: string,
   avatarUrl?: string
 ) {
+  // NOTE: we deliberately do NOT touch lastActiveAt here.
+  // updateStreak() must see the PREVIOUS lastActiveAt to compute
+  // consecutive days correctly. Touching it here (before updateStreak
+  // runs) made diffDays always 0, so streaks could never increment.
+  // lastActiveAt is updated by addXP() / updateStreak() instead.
   return db.member.upsert({
     where: {
       userId_experienceId: { userId, experienceId },
     },
     update: {
-      lastActiveAt: new Date(),
       ...(displayName && { displayName }),
       ...(avatarUrl && { avatarUrl }),
     },

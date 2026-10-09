@@ -13,11 +13,11 @@ import { db } from "@/lib/db";
 import { headers } from "next/headers";
 
 // ============================================
-// requireAdmin: verify the caller has a valid Whop JWT.
-// Whop only routes company admins to /dashboard/[companyId],
-// so a valid JWT from that context is sufficient proof.
-// If the JWT carries a companyId, we verify it matches the
-// requested one to prevent cross-company access.
+// requireAdmin: verify the caller has a valid Whop JWT tied to
+// the requested company. The JWT's companyId must be present AND
+// match the requested companyId — we no longer trust "Whop's
+// routing" alone, because this is a plain fetchable endpoint and
+// a JWT without companyId would let any authenticated user in.
 // ============================================
 async function requireAdmin(companyId: string) {
   const headersList = await headers();
@@ -25,9 +25,9 @@ async function requireAdmin(companyId: string) {
   if (!user) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
-  // Cross-company guard: if JWT has a companyId, it must match.
-  // If JWT has no companyId (null), we trust Whop's routing.
-  if (user.companyId && user.companyId !== companyId) {
+  // Strict check: JWT must carry a companyId and it must match.
+  // No companyId in the token = no admin access, period.
+  if (!user.companyId || user.companyId !== companyId) {
     return { error: NextResponse.json({ error: "Admin access required" }, { status: 403 }) };
   }
   // Fall back to companyId as the settings key when JWT lacks experienceId
