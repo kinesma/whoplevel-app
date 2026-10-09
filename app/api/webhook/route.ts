@@ -16,13 +16,14 @@ import { addXP, getOrCreateMember, updateStreak, getOrCreateSettings } from "@/l
 
 // ============================================
 // Webhook signature verification.
-// We verify the HMAC-SHA256 signature manually (same algorithm as
-// @whop/api's makeWebhookValidator) instead of using the SDK's
-// validator, because the SDK also gates on api_version === "v5"
-// while this webhook is configured as API v1 in the Whop dashboard.
-// Rejecting on version would break legitimate v1 deliveries.
-// Header format: "t=<unix_ts>,v1=<hex_hmac>"
-// Signed payload: "<timestamp>.<raw_body>"
+// Whop follows the Standard Webhooks spec:
+//   - Headers: webhook-id, webhook-timestamp, webhook-signature
+//   - Signed payload: "{webhook-id}.{webhook-timestamp}.{raw body}"
+//   - Signature: HMAC-SHA256 with the ws_... secret, base64-encoded
+//   - Header value: space-delimited list like "v1,<base64sig>"
+// We verify manually instead of using the SDK's validator because the
+// SDK additionally gates on api_version === "v5", while this webhook is
+// configured as API v1 in the Whop dashboard.
 // ============================================
 async function verifySignature(request: NextRequest, rawBody: string): Promise<boolean> {
   const secret = process.env.WHOP_WEBHOOK_SECRET ?? "";
@@ -30,17 +31,15 @@ async function verifySignature(request: NextRequest, rawBody: string): Promise<b
     console.error("WHOP_WEBHOOK_SECRET is not set — refusing webhook");
     return false;
   }
-  const header = request.headers.get("whop-signature") ?? "";
-  const [timestampPart, signaturePart] = header.split(",");
-  const timestamp = timestampPart?.split("=")[1] ?? "";
-  const sentSignature = signaturePart?.split("=")[1] ?? "";
-  if (!timestamp || !sentSignature) return false;
+  const webhookId = request.headers.get("webhook-id") ?? "";
+  const webhookTimestamp = request.headers.get("webhook-timestamp") ?? "";
+  const signatureHeader = request.headers.get("webhook-signature") ?? "";
+  if (!webhookId || !webhookTimestamp || !signatureHeader) return false;
 
   // Reject stale requests (>5 min) to prevent replay attacks
   const nowSec = Math.round(Date.now() / 1000);
-  if (Number.isNaN(parseInt(timestamp)) || Math.abs(nowSec - parseInt(timestamp)) > 300) {
-    return false;
-  }
+  const ts = parseInt(webhookTimestamp, 10);
+  if (Number.isNaN(ts) || Math.abs(nowSec - ts) > 300) return false;
 
   try {
     const key = await crypto.subtle.importKey(
@@ -53,12 +52,20 @@ async function verifySignature(request: NextRequest, rawBody: string): Promise<b
     const sigBuffer = await crypto.subtle.sign(
       "HMAC",
       key,
-      new TextEncoder().encode(`${timestamp}.${rawBody}`)
+      new TextEncoder().encode(`${webhookId}.${webhookTimestamp}.${rawBody}`)
     );
-    const expected = Array.from(new Uint8Array(sigBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    return expected === sentSignature.toLowerCase();
+    const expected = Buffer.from(sigBuffer).toString("base64");
+
+    // The header may carry multiple space-delimited signatures
+    // (secret rotation). Accept if any v1 signature matches.
+    for (const entry of signatureHeader.split(" ")) {
+      const commaIdx = entry.indexOf(",");
+      if (commaIdx === -1) continue;
+      const version = entry.slice(0, commaIdx);
+      const value = entry.slice(commaIdx + 1);
+      if (version === "v1" && value && value === expected) return true;
+    }
+    return false;
   } catch {
     return false;
   }
