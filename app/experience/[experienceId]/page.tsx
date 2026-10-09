@@ -98,13 +98,17 @@ export default async function ExperiencePage({ params }: PageProps) {
       getOrCreateMember(user.userId, userExperienceId, companyId),
     ]);
 
-    // ROUND 2 (parallel): streak update + badge seed + all 4 data reads.
-    // Running these 6 ops concurrently keeps total latency well within
+    // Seed default badges BEFORE reading them — the badge list must not
+    // race with the seed (first load would otherwise show 0 badges).
+    // Seeding is idempotent (no-op when badges exist), so this is cheap.
+    await seedDefaultBadges(userExperienceId);
+
+    // ROUND 2 (parallel): streak update + all 4 data reads.
+    // Running these 5 ops concurrently keeps total latency well within
     // Vercel's 10-second function timeout even on Neon cold starts.
-    const [streakMember, , activities, leaderboardMembers, badges, rewards] =
+    const [streakMember, activities, leaderboardMembers, badges, rewards] =
       await Promise.all([
         updateStreak(member.id),
-        seedDefaultBadges(userExperienceId),
         db.activity.findMany({
           where: { memberId: member.id },
           orderBy: { createdAt: "desc" },
